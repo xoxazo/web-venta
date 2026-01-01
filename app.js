@@ -1,6 +1,5 @@
-// Configuración de Sincronización (Conectando con Supabase...)
-const SUPABASE_URL = 'https://wirbljzvjwkwmpgyvuex.supabase.co'; 
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndpcmJsanp2andrd21wZ3l2dWV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcyODg0NTAsImV4cCI6MjA4Mjg2NDQ1MH0.06KkBvvvv_Gl9UUfZTIS2EEfvAqOvlEMfE7BOaURfMU'; 
+// Configuración de Sincronización (Usando Cloudflare Worker - Alta Disponibilidad)
+const SYNC_ENDPOINT = 'https://ventas-db.kinghost.workers.dev';
 const SYNC_ID_KEY = 'ventas_sync_id';
 
 // Estado de la aplicación
@@ -53,15 +52,10 @@ function updateSyncStatus(status, text) {
     if (textEl) textEl.textContent = text;
 }
 
-// Persistencia Global con Supabase
+// Persistencia Global (Simple y Directa)
 async function saveToDatabase() {
-    updateSyncStatus('syncing', 'Sincronizando...');
+    updateSyncStatus('syncing', 'Guardando...');
     localStorage.setItem('ventas_state_v2', JSON.stringify(state));
-
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
-        updateSyncStatus('offline', 'Faltan claves de API');
-        return;
-    }
 
     let syncId = localStorage.getItem(SYNC_ID_KEY);
     if (!syncId) {
@@ -70,33 +64,21 @@ async function saveToDatabase() {
     }
     
     try {
-        // Usamos UPSERT de Supabase (insertar o actualizar)
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/ventas`, {
+        const response = await fetch(`${SYNC_ENDPOINT}/save`, {
             method: 'POST',
-            headers: {
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'resolution=merge-duplicates, return=minimal'
-            },
+            mode: 'cors',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id: syncId, data: state })
         });
 
-        if (response.ok || response.status === 201 || response.status === 204) {
+        if (response.ok) {
             updateSyncStatus('success', 'Sincronizado');
-            console.log("Sincronización exitosa en Supabase");
         } else {
-            const errText = await response.text();
-            let errorMessage = 'Error Supabase';
-            try {
-                const errJson = JSON.parse(errText);
-                errorMessage = errJson.message || errorMessage;
-            } catch(e) {}
-            throw new Error(errorMessage + " (" + response.status + ")");
+            throw new Error('Servidor');
         }
     } catch (e) {
-        console.error("Detalle técnico del error:", e);
-        updateSyncStatus('offline', 'Error: ' + e.message);
+        console.warn("Error nube, usando local:", e);
+        updateSyncStatus('offline', 'Local OK');
     }
 }
 
@@ -111,40 +93,28 @@ async function loadFromDatabase() {
         return;
     }
 
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
-        loadFromLocalStorage();
-        updateSyncStatus('offline', 'Configurar API');
-        return;
-    }
-
     try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/ventas?id=eq.${syncId}&select=data`, {
+        const response = await fetch(`${SYNC_ENDPOINT}/load?id=${syncId}`, {
             method: 'GET',
-            headers: {
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`,
-                'Range': '0-0' // Solo queremos la primera fila
-            }
+            mode: 'cors'
         });
 
         if (response.ok) {
-            const rows = await response.json();
-            if (rows && rows.length > 0 && rows[0].data) {
-                state = rows[0].data;
+            const result = await response.json();
+            if (result && result.data) {
+                state = result.data;
                 updateSyncStatus('success', 'Sincronizado');
-                console.log("Datos cargados correctamente de Supabase");
             } else {
                 loadFromLocalStorage();
-                updateSyncStatus('success', 'Local (Nube vacía)');
             }
         } else {
-            const errText = await response.text();
-            throw new Error("Error " + response.status);
+            loadFromLocalStorage();
+            updateSyncStatus('success', 'Local');
         }
     } catch (e) {
-        console.error("Error de carga:", e);
+        console.error("Error red:", e);
         loadFromLocalStorage();
-        updateSyncStatus('offline', 'Error red: ' + e.message);
+        updateSyncStatus('offline', 'Local');
     }
 
     if (state.theme === 'dark') {
