@@ -148,7 +148,7 @@ header {
 .header-controls {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 10px;
 }
 
 #theme-toggle {
@@ -183,15 +183,37 @@ header {
     opacity: 1;
 }
 
-.save-btn {
-    background-color: var(--success-color);
-    color: white;
-    padding: 8px 16px;
-    border-radius: 50px;
+.backup-btn, .restore-btn, .save-btn {
+    padding: 8px 15px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
     font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.2s;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 5px;
+}
+
+.backup-btn {
+    background: #475569;
+    color: white;
+}
+
+.restore-btn {
+    background: #64748b;
+    color: white;
+}
+
+.save-btn {
+    background: var(--primary-color);
+    color: white;
+}
+
+.backup-btn:hover, .restore-btn:hover, .save-btn:hover {
+    filter: brightness(1.2);
+    transform: translateY(-1px);
 }
 
 .save-btn.saving {

@@ -499,6 +499,55 @@ window.deleteArticle = (index) => {
 
 window.deleteGroup = deleteGroup;
 
+// Referencias al DOM (Respaldo)
+const backupBtn = document.getElementById('backup-db-btn');
+const restoreBtn = document.getElementById('restore-db-btn');
+const importFileInput = document.getElementById('import-file');
+
+// Función para exportar datos a un archivo TXT/JSON
+function exportData() {
+    const dataStr = JSON.stringify(state, null, 4);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `ventas_respaldo_${new Date().toISOString().slice(0,10)}.txt`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+}
+
+// Función para importar datos desde un archivo
+function importData(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const importedState = JSON.parse(e.target.result);
+            
+            // Validación básica de estructura
+            if (importedState.groups && importedState.activeGroupId) {
+                if (confirm('¿Estás seguro de que quieres restaurar estos datos? Los datos actuales se sobrescribirán.')) {
+                    state = importedState;
+                    localStorage.setItem('ventas_state_v2', JSON.stringify(state));
+                    updateUI();
+                    initCharts();
+                    alert('Datos restaurados con éxito.');
+                    saveToDatabase(); // Intentar sincronizar los nuevos datos cargados
+                }
+            } else {
+                alert('El archivo no tiene el formato correcto.');
+            }
+        } catch (err) {
+            alert('Error al leer el archivo. Asegúrate de que es un archivo válido.');
+            console.error(err);
+        }
+    };
+    reader.readAsText(file);
+}
+
 // Inicialización corregida
 document.addEventListener('DOMContentLoaded', () => {
     // 1. Verificar sesión previa
@@ -519,4 +568,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. Listeners de Auth
     if (loginForm) loginForm.addEventListener('submit', handleLogin);
     if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+
+    // Listeners de Respaldo
+    if (backupBtn) backupBtn.addEventListener('click', exportData);
+    if (restoreBtn) restoreBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        importFileInput.click();
+    });
+    if (importFileInput) importFileInput.addEventListener('change', importData);
 });
