@@ -12,26 +12,26 @@
     <!-- Modal de Login -->
     <div id="login-modal" class="modal-overlay">
         <div class="modal-content login-box">
-            <h2>🔐 Acceso a Mis Ventas</h2>
-            <p>Introduce un nombre de usuario y contraseña para sincronizar tus datos en cualquier dispositivo.</p>
+            <div class="login-logo">📈</div>
+            <h2>SISTEMA DE VENTAS</h2>
+            <p>Acceso restringido. Por favor, identifícate.</p>
             <form id="login-form">
                 <div class="input-group">
                     <label>Usuario</label>
-                    <input type="text" id="login-user" required placeholder="Ej: mi_negocio">
+                    <input type="text" id="login-user" required placeholder="Nombre de usuario" autocomplete="username">
                 </div>
                 <div class="input-group">
                     <label>Contraseña</label>
-                    <input type="password" id="login-pass" required placeholder="••••••••">
+                    <input type="password" id="login-pass" required placeholder="••••••••" autocomplete="current-password">
                 </div>
                 <div class="login-actions">
-                    <button type="submit" class="btn-primary">Entrar / Registrar</button>
+                    <button type="submit" class="btn-primary">INICIAR SESIÓN</button>
                 </div>
-                <p class="login-note">Si el usuario no existe, se creará uno nuevo automáticamente.</p>
             </form>
         </div>
     </div>
 
-    <div class="container">
+    <div class="container app-container">
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h2>Ventas</h2>

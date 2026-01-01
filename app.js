@@ -66,44 +66,20 @@ async function handleLogin(e) {
     const user = document.getElementById('login-user').value.trim().toLowerCase();
     const pass = document.getElementById('login-pass').value;
     
-    if (!user || !pass) return;
-
-    updateSyncStatus('syncing', 'Autenticando...');
-    
-    try {
-        const response = await fetch(AUTH_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user, pass })
-        });
-
-        if (response.ok) {
-            currentUser = user;
-            localStorage.setItem(USER_SESSION_KEY, JSON.stringify({ user, pass }));
-            document.body.classList.add('logged-in');
-            usernameText.textContent = user;
-            
-            // Una vez logueado, cargar sus datos específicos de la nube
-            await loadFromDatabase();
-        } else {
-            alert('Error de autenticación. Verifica tus credenciales.');
-            updateSyncStatus('offline', 'Error Login');
-        }
-    } catch (e) {
-        // Modo offline: Si ya existía sesión local, permitir entrar
-        const savedSession = localStorage.getItem(USER_SESSION_KEY);
-        if (savedSession) {
-            const session = JSON.parse(savedSession);
-            if (session.user === user) {
-                currentUser = user;
-                document.body.classList.add('logged-in');
-                usernameText.textContent = user;
-                loadFromLocalStorage();
-                updateUI();
-                return;
-            }
-        }
-        alert('Error de conexión. No se pudo validar el usuario.');
+    // Validación Estricta: wawita / wawita
+    if (user === 'wawita' && pass === 'wawita') {
+        updateSyncStatus('syncing', 'Autenticando...');
+        
+        currentUser = user;
+        localStorage.setItem(USER_SESSION_KEY, JSON.stringify({ user, pass }));
+        document.body.classList.add('logged-in');
+        usernameText.textContent = user;
+        
+        // Cargar datos de la nube
+        await loadFromDatabase();
+    } else {
+        alert('Acceso Denegado. Credenciales incorrectas.');
+        updateSyncStatus('offline', 'Error Login');
     }
 }
 
@@ -529,10 +505,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedSession = localStorage.getItem(USER_SESSION_KEY);
     if (savedSession) {
         const session = JSON.parse(savedSession);
-        currentUser = session.user;
-        document.body.classList.add('logged-in');
-        usernameText.textContent = currentUser;
-        loadFromDatabase(); // Intentar cargar lo más reciente
+        // Validar que la sesión guardada sea la permitida
+        if (session.user === 'wawita' && session.pass === 'wawita') {
+            currentUser = session.user;
+            document.body.classList.add('logged-in');
+            usernameText.textContent = currentUser;
+            loadFromDatabase(); 
+        } else {
+            localStorage.removeItem(USER_SESSION_KEY);
+        }
     }
 
     // 2. Listeners de Auth
