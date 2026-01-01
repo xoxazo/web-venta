@@ -9,10 +9,36 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <div class="app-layout">
+    <!-- Modal de Login -->
+    <div id="login-modal" class="modal-overlay">
+        <div class="modal-content login-box">
+            <h2>🔐 Acceso a Mis Ventas</h2>
+            <p>Introduce un nombre de usuario y contraseña para sincronizar tus datos en cualquier dispositivo.</p>
+            <form id="login-form">
+                <div class="input-group">
+                    <label>Usuario</label>
+                    <input type="text" id="login-user" required placeholder="Ej: mi_negocio">
+                </div>
+                <div class="input-group">
+                    <label>Contraseña</label>
+                    <input type="password" id="login-pass" required placeholder="••••••••">
+                </div>
+                <div class="login-actions">
+                    <button type="submit" class="btn-primary">Entrar / Registrar</button>
+                </div>
+                <p class="login-note">Si el usuario no existe, se creará uno nuevo automáticamente.</p>
+            </form>
+        </div>
+    </div>
+
+    <div class="container">
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h2>Ventas</h2>
+                <div class="user-badge" id="user-display">
+                    <span id="username-text">Invitado</span>
+                    <button id="logout-btn" title="Cerrar sesión">🚪</button>
+                </div>
                 <button id="new-group-btn" title="Nueva Venta">+</button>
             </div>
             <div id="groups-list" class="groups-list">

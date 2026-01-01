@@ -1,8 +1,9 @@
-// Configuración de Sincronización (Infraestructura de Datos)
+// Configuración de Sincronización Global (Infraestructura de Datos Unitaria)
 const SYNC_ENDPOINT = 'https://ventas-db.kinghost.workers.dev';
-const SYNC_ID_KEY = 'ventas_sync_id';
+const AUTH_ENDPOINT = 'https://ventas-db.kinghost.workers.dev/auth'; // Endpoint para validación unitaria
 const LAST_SYNC_KEY = 'ventas_last_sync';
-const SYNC_RETRY_DELAY = 5000; // 5 segundos para reintento automático
+const USER_SESSION_KEY = 'ventas_user_session';
+const SYNC_RETRY_DELAY = 5000;
 
 // Estado de la aplicación
 let state = {
@@ -19,7 +20,7 @@ let state = {
         }
     },
     theme: 'light',
-    version: '2.1' // Control de versiones para migraciones de datos
+    version: '3.0' 
 };
 
 // Referencias al DOM
@@ -48,139 +49,131 @@ const showSyncIdBtn = document.getElementById('show-sync-id');
 let salesChart;
 let profitChart;
 
-// Variables de control de red
+// Variables de Sesión
+let currentUser = null;
 let isSyncing = false;
 let retryTimer = null;
 
-function updateSyncStatus(status, text, detail = '') {
-    if (!syncIndicator) return;
-    syncIndicator.className = 'sync-indicator ' + status;
-    const textEl = syncIndicator.querySelector('.sync-text');
-    if (textEl) textEl.textContent = text;
+// Referencias al DOM (Login)
+const loginModal = document.getElementById('login-modal');
+const loginForm = document.getElementById('login-form');
+const usernameText = document.getElementById('username-text');
+const logoutBtn = document.getElementById('logout-btn');
+
+// Manejo de Sesión de Usuario
+async function handleLogin(e) {
+    e.preventDefault();
+    const user = document.getElementById('login-user').value.trim().toLowerCase();
+    const pass = document.getElementById('login-pass').value;
     
-    // Feedback visual en consola y título de la página para depuración rápida
-    if (detail) {
-        console.log(`[Sync Status] ${status.toUpperCase()}: ${detail}`);
-        if (status === 'offline') {
-            document.title = `⚠️ Ventas - ${text}`;
+    if (!user || !pass) return;
+
+    updateSyncStatus('syncing', 'Autenticando...');
+    
+    try {
+        const response = await fetch(AUTH_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user, pass })
+        });
+
+        if (response.ok) {
+            currentUser = user;
+            localStorage.setItem(USER_SESSION_KEY, JSON.stringify({ user, pass }));
+            document.body.classList.add('logged-in');
+            usernameText.textContent = user;
+            
+            // Una vez logueado, cargar sus datos específicos de la nube
+            await loadFromDatabase();
         } else {
-            document.title = `Ventas - ${state.groups[state.activeGroupId]?.name || 'App'}`;
+            alert('Error de autenticación. Verifica tus credenciales.');
+            updateSyncStatus('offline', 'Error Login');
         }
+    } catch (e) {
+        // Modo offline: Si ya existía sesión local, permitir entrar
+        const savedSession = localStorage.getItem(USER_SESSION_KEY);
+        if (savedSession) {
+            const session = JSON.parse(savedSession);
+            if (session.user === user) {
+                currentUser = user;
+                document.body.classList.add('logged-in');
+                usernameText.textContent = user;
+                loadFromLocalStorage();
+                updateUI();
+                return;
+            }
+        }
+        alert('Error de conexión. No se pudo validar el usuario.');
     }
 }
 
-// Implementación de Persistencia Robusta (LocalStorage + Cloud)
+function handleLogout() {
+    if (confirm('¿Cerrar sesión? Los cambios locales se perderán si no están sincronizados.')) {
+        localStorage.removeItem(USER_SESSION_KEY);
+        location.reload();
+    }
+}
+
+// Persistencia Robusta Unitaria (Identificada por Usuario)
 async function saveToDatabase(isRetry = false) {
-    if (isSyncing && !isRetry) return; // Evitar colisiones de guardado
+    if (!currentUser || (isSyncing && !isRetry)) return;
     
     isSyncing = true;
-    updateSyncStatus('syncing', 'Guardando...');
+    updateSyncStatus('syncing', 'Sincronizando...');
     
-    // 1. Guardar localmente siempre (Seguridad inmediata)
     localStorage.setItem('ventas_state_v2', JSON.stringify(state));
-    localStorage.setItem(LAST_SYNC_KEY, Date.now());
-
-    let syncId = localStorage.getItem(SYNC_ID_KEY);
-    if (!syncId) {
-        syncId = 'v_' + Math.random().toString(36).substring(2, 10);
-        localStorage.setItem(SYNC_ID_KEY, syncId);
-    }
     
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-
+        const session = JSON.parse(localStorage.getItem(USER_SESSION_KEY));
         const response = await fetch(`${SYNC_ENDPOINT}/save`, {
             method: 'POST',
-            mode: 'cors',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: syncId, data: state }),
-            signal: controller.signal
+            body: JSON.stringify({ 
+                id: currentUser, // El ID ahora es el nombre de usuario
+                pass: session.pass, // Validación simple en worker
+                data: state 
+            })
         });
-
-        clearTimeout(timeoutId);
 
         if (response.ok) {
             updateSyncStatus('success', 'Sincronizado');
             isSyncing = false;
-            if (retryTimer) {
-                clearTimeout(retryTimer);
-                retryTimer = null;
-            }
         } else {
-            throw new Error(`HTTP ${response.status}`);
+            throw new Error('Error Servidor');
         }
     } catch (e) {
-        const errorMsg = e.name === 'AbortError' ? 'Timeout (Red lenta)' : e.message;
-        updateSyncStatus('offline', 'Local OK (Reintentando...)', errorMsg);
+        updateSyncStatus('offline', 'Copia Local', e.message);
         isSyncing = false;
-        
-        // Programar reintento automático si falló por red
-        if (!retryTimer) {
-            retryTimer = setTimeout(() => saveToDatabase(true), SYNC_RETRY_DELAY);
-        }
+        if (!retryTimer) retryTimer = setTimeout(() => saveToDatabase(true), SYNC_RETRY_DELAY);
     }
 }
 
 async function loadFromDatabase() {
-    updateSyncStatus('syncing', 'Cargando datos...');
+    if (!currentUser) return;
     
-    let syncId = localStorage.getItem(SYNC_ID_KEY);
+    updateSyncStatus('syncing', 'Descargando datos...');
     
-    // Primero cargamos local para tener algo inmediato que mostrar
-    loadFromLocalStorage();
-    updateUI(); 
-
-    if (!syncId) {
-        updateSyncStatus('success', 'Local');
-        return;
-    }
-
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-        const response = await fetch(`${SYNC_ENDPOINT}/load?id=${syncId}`, {
-            method: 'GET',
-            mode: 'cors',
-            signal: controller.signal
+        const session = JSON.parse(localStorage.getItem(USER_SESSION_KEY));
+        const response = await fetch(`${SYNC_ENDPOINT}/load?id=${currentUser}&pass=${session.pass}`, {
+            method: 'GET'
         });
-
-        clearTimeout(timeoutId);
 
         if (response.ok) {
             const result = await response.json();
             if (result && result.data) {
-                // Lógica de fusión de datos (Conflict resolution básica)
-                // Si los datos de la nube son más recientes o diferentes, actualizamos
-                const cloudState = result.data;
-                if (JSON.stringify(cloudState) !== JSON.stringify(state)) {
-                    state = cloudState;
-                    localStorage.setItem('ventas_state_v2', JSON.stringify(state));
-                    updateUI();
-                    initCharts();
-                }
+                state = result.data;
+                localStorage.setItem('ventas_state_v2', JSON.stringify(state));
+                updateUI();
+                initCharts();
                 updateSyncStatus('success', 'Sincronizado');
             }
-        } else {
-            updateSyncStatus('offline', 'Modo Local');
         }
     } catch (e) {
-        console.warn("Error cargando de nube, usando copia local:", e.message);
-        updateSyncStatus('offline', 'Local (Sin Red)');
+        console.warn("Cargando desde copia local...");
+        loadFromLocalStorage();
+        updateUI();
     }
-
-    // Aplicar tema después de cargar
-    if (state.theme === 'dark') {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        if (themeToggle) themeToggle.textContent = '☀️';
-    } else {
-        document.documentElement.removeAttribute('data-theme');
-        if (themeToggle) themeToggle.textContent = '🌓';
-    }
-    
-    initCharts();
-    updateUI();
 }
 
 // Manejo del ID de Sincronización
@@ -530,5 +523,19 @@ window.deleteArticle = (index) => {
 
 window.deleteGroup = deleteGroup;
 
-// Inicio
-loadFromDatabase();
+// Inicialización corregida
+document.addEventListener('DOMContentLoaded', () => {
+    // 1. Verificar sesión previa
+    const savedSession = localStorage.getItem(USER_SESSION_KEY);
+    if (savedSession) {
+        const session = JSON.parse(savedSession);
+        currentUser = session.user;
+        document.body.classList.add('logged-in');
+        usernameText.textContent = currentUser;
+        loadFromDatabase(); // Intentar cargar lo más reciente
+    }
+
+    // 2. Listeners de Auth
+    if (loginForm) loginForm.addEventListener('submit', handleLogin);
+    if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+});
