@@ -1,6 +1,6 @@
-// Configuración de JSONBin.io
-const BIN_ID_KEY = 'ventas_jsonbin_id';
-const MASTER_KEY = '$2a$10$mM..UNQapnjXnJQE0QfBUeoBqUXJHBk1tElUb16AY1CedHOPTR7lu';
+// Configuración de Sincronización (Usando kvdb.io para máxima compatibilidad)
+const KVDB_BUCKET = '7nJk4m9Pq2WzXyRtVbNh'; // Bucket público para la app
+const SYNC_ID_KEY = 'ventas_sync_id';
 
 // Estado de la aplicación
 let state = {
@@ -39,6 +39,7 @@ const currentGroupNameEl = document.getElementById('current-group-name');
 const currentGroupDateEl = document.getElementById('current-group-date');
 const saveDbBtn = document.getElementById('save-db-btn');
 const syncIndicator = document.getElementById('sync-indicator');
+const showSyncIdBtn = document.getElementById('show-sync-id');
 
 // Inicialización de Gráficas
 let salesChart;
@@ -51,85 +52,65 @@ function updateSyncStatus(status, text) {
     if (textEl) textEl.textContent = text;
 }
 
-// Persistencia Global con JSONBin
+// Persistencia Global con KVDB.io
 async function saveToDatabase() {
     updateSyncStatus('syncing', 'Sincronizando...');
     
-    // Guardamos en LocalStorage siempre como respaldo rápido
     localStorage.setItem('ventas_state_v2', JSON.stringify(state));
 
-    let binId = localStorage.getItem(BIN_ID_KEY);
+    let syncId = localStorage.getItem(SYNC_ID_KEY);
+    if (!syncId) {
+        syncId = 'v_' + Math.random().toString(36).substring(2, 10);
+        localStorage.setItem(SYNC_ID_KEY, syncId);
+    }
     
     try {
-        const method = binId ? 'PUT' : 'POST';
-        const url = binId ? `https://api.jsonbin.io/v3/b/${binId}` : `https://api.jsonbin.io/v3/b`;
-        
-        const headers = {
-            'Content-Type': 'application/json',
-            'X-Master-Key': MASTER_KEY
-        };
-        
-        if (!binId) {
-            headers['X-Bin-Name'] = 'Ventas_App_Data';
-        }
-
-        const response = await fetch(url, {
-            method: method,
-            headers: headers,
+        const response = await fetch(`https://kvdb.io/${KVDB_BUCKET}/${syncId}`, {
+            method: 'POST',
             body: JSON.stringify(state)
         });
 
-        const data = await response.json();
-
         if (response.ok) {
-            if (!binId && data.metadata && data.metadata.id) {
-                localStorage.setItem(BIN_ID_KEY, data.metadata.id);
-            }
             updateSyncStatus('success', 'Sincronizado');
-            console.log("Sincronización global completada.");
         } else {
-            throw new Error(data.message || 'Error en la sincronización');
+            throw new Error('Servidor ocupado');
         }
     } catch (e) {
-        console.error("Error en sincronización global:", e);
-        updateSyncStatus('offline', 'Error de conexión');
+        console.error("Error en sincronización:", e);
+        updateSyncStatus('offline', 'Error: ' + e.message);
     }
 }
 
 async function loadFromDatabase() {
     updateSyncStatus('syncing', 'Cargando...');
     
-    let binId = localStorage.getItem(BIN_ID_KEY);
+    let syncId = localStorage.getItem(SYNC_ID_KEY);
     
-    // Si no hay binId, intentamos cargar de LocalStorage primero
-    if (!binId) {
+    if (!syncId) {
         loadFromLocalStorage();
         updateSyncStatus('success', 'Local');
         return;
     }
 
     try {
-        const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
-            headers: {
-                'X-Master-Key': MASTER_KEY
-            }
-        });
+        const response = await fetch(`https://kvdb.io/${KVDB_BUCKET}/${syncId}`);
 
         if (response.ok) {
-            const result = await response.json();
-            if (result.record) {
-                state = result.record;
+            const data = await response.json();
+            if (data && data.groups) {
+                state = data;
                 updateSyncStatus('success', 'Sincronizado');
-                console.log("Datos cargados desde la nube.");
+            } else {
+                loadFromLocalStorage();
             }
         } else {
             loadFromLocalStorage();
-            updateSyncStatus('offline', 'Error al cargar');
+            updateSyncStatus('success', 'Local');
         }
     } catch (e) {
         console.error("Error cargando de la nube:", e);
         loadFromLocalStorage();
-        updateSyncStatus('offline', 'Sin conexión');
+        updateSyncStatus('offline', 'Error de red');
     }
 
     if (state.theme === 'dark') {
@@ -139,6 +120,21 @@ async function loadFromDatabase() {
     
     initCharts();
     updateUI();
+}
+
+// Manejo del ID de Sincronización
+if (showSyncIdBtn) {
+    showSyncIdBtn.addEventListener('click', () => {
+        let currentId = localStorage.getItem(SYNC_ID_KEY);
+        const newId = prompt('Tu ID de sincronización actual es:\n' + currentId + '\n\nSi quieres sincronizar con otro navegador, copia este ID y pégalo aquí en el otro navegador:', currentId);
+        
+        if (newId && newId !== currentId) {
+            if (confirm('¿Quieres cambiar tu ID al nuevo: ' + newId + '? Se cargarán los datos asociados a ese ID.')) {
+                localStorage.setItem(SYNC_ID_KEY, newId);
+                loadFromDatabase();
+            }
+        }
+    });
 }
 
 function loadFromLocalStorage() {
