@@ -1,5 +1,6 @@
-// Configuración de Sincronización (Usando Pantry Cloud - Más estable)
-const PANTRY_ID = '98075f84-8848-43d7-846c-7e6e4092404e'; // Tu despensa privada para la app
+// Configuración de Sincronización (Conectando con Supabase...)
+const SUPABASE_URL = 'https://wirbljzvjwkwmpgyvuex.supabase.co'; 
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndpcmJsanp2andrd21wZ3l2dWV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcyODg0NTAsImV4cCI6MjA4Mjg2NDQ1MH0.06KkBvvvv_Gl9UUfZTIS2EEfvAqOvlEMfE7BOaURfMU'; 
 const SYNC_ID_KEY = 'ventas_sync_id';
 
 // Estado de la aplicación
@@ -52,12 +53,15 @@ function updateSyncStatus(status, text) {
     if (textEl) textEl.textContent = text;
 }
 
-// Persistencia Global con Pantry Cloud
+// Persistencia Global con Supabase
 async function saveToDatabase() {
     updateSyncStatus('syncing', 'Sincronizando...');
-    
-    // Guardar siempre en local primero por seguridad
     localStorage.setItem('ventas_state_v2', JSON.stringify(state));
+
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+        updateSyncStatus('offline', 'Faltan claves de API');
+        return;
+    }
 
     let syncId = localStorage.getItem(SYNC_ID_KEY);
     if (!syncId) {
@@ -66,23 +70,27 @@ async function saveToDatabase() {
     }
     
     try {
-        const response = await fetch(`https://getpantry.cloud/apiv1/pantry/${PANTRY_ID}/basket/${syncId}`, {
-            method: 'POST', // Pantry usa POST tanto para crear como para actualizar
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(state)
+        // Usamos UPSERT de Supabase (insertar o actualizar)
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/ventas`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates'
+            },
+            body: JSON.stringify({ id: syncId, data: state })
         });
 
         if (response.ok) {
             updateSyncStatus('success', 'Sincronizado');
-            console.log("Sincronización en Pantry exitosa.");
         } else {
-            const errorText = await response.text();
-            throw new Error(errorText || 'Error del servidor');
+            const err = await response.json();
+            throw new Error(err.message || 'Error Supabase');
         }
     } catch (e) {
-        console.error("Error en sincronización:", e);
-        // Si falla la nube, al menos avisamos que lo local está bien
-        updateSyncStatus('offline', 'Local OK (Nube con error)');
+        console.error("Detalle técnico del error:", e);
+        updateSyncStatus('offline', 'Error: ' + e.message);
     }
 }
 
@@ -91,41 +99,42 @@ async function loadFromDatabase() {
     
     let syncId = localStorage.getItem(SYNC_ID_KEY);
     
-    // Si no hay ID, cargamos local
     if (!syncId) {
         loadFromLocalStorage();
         updateSyncStatus('success', 'Local');
         return;
     }
 
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+        loadFromLocalStorage();
+        updateSyncStatus('offline', 'Configurar API');
+        return;
+    }
+
     try {
-        const response = await fetch(`https://getpantry.cloud/apiv1/pantry/${PANTRY_ID}/basket/${syncId}`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' }
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/ventas?id=eq.${syncId}&select=data`, {
+            headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`
+            }
         });
 
         if (response.ok) {
-            const data = await response.json();
-            // Verificamos que los datos tengan la estructura correcta
-            if (data && data.groups) {
-                state = data;
+            const rows = await response.json();
+            if (rows && rows.length > 0 && rows[0].data) {
+                state = rows[0].data;
                 updateSyncStatus('success', 'Sincronizado');
-                console.log("Datos cargados desde Pantry.");
             } else {
-                console.warn("Datos de la nube vacíos o corruptos, usando local.");
                 loadFromLocalStorage();
+                updateSyncStatus('success', 'Local (Vacío en nube)');
             }
-        } else if (response.status === 404) {
-            // El basket aún no existe, usamos local
-            loadFromLocalStorage();
-            updateSyncStatus('success', 'Local (Nueva nube)');
         } else {
-            throw new Error('Error al conectar');
+            throw new Error('No se pudo leer de la nube');
         }
     } catch (e) {
-        console.error("Error cargando de la nube:", e);
+        console.error("Error de carga:", e);
         loadFromLocalStorage();
-        updateSyncStatus('offline', 'Usando copia local');
+        updateSyncStatus('offline', 'Error de red');
     }
 
     if (state.theme === 'dark') {
@@ -241,6 +250,8 @@ function initCharts() {
 // Lógica de Negocio
 function updateUI() {
     const activeGroup = state.groups[state.activeGroupId];
+    // Si no hay grupo activo, no hacemos nada
+    if (!activeGroup) return;
     if (!activeGroup) return;
 
     // Actualizar Header
