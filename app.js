@@ -1,5 +1,5 @@
-// Configuración de Sincronización (Usando kvdb.io para máxima compatibilidad)
-const KVDB_BUCKET = '7nJk4m9Pq2WzXyRtVbNh'; // Bucket público para la app
+// Configuración de Sincronización (Usando Pantry Cloud - Más estable)
+const PANTRY_ID = '98075f84-8848-43d7-846c-7e6e4092404e'; // Tu despensa privada para la app
 const SYNC_ID_KEY = 'ventas_sync_id';
 
 // Estado de la aplicación
@@ -52,10 +52,11 @@ function updateSyncStatus(status, text) {
     if (textEl) textEl.textContent = text;
 }
 
-// Persistencia Global con KVDB.io
+// Persistencia Global con Pantry Cloud
 async function saveToDatabase() {
     updateSyncStatus('syncing', 'Sincronizando...');
     
+    // Guardar siempre en local primero por seguridad
     localStorage.setItem('ventas_state_v2', JSON.stringify(state));
 
     let syncId = localStorage.getItem(SYNC_ID_KEY);
@@ -65,19 +66,23 @@ async function saveToDatabase() {
     }
     
     try {
-        const response = await fetch(`https://kvdb.io/${KVDB_BUCKET}/${syncId}`, {
-            method: 'POST',
+        const response = await fetch(`https://getpantry.cloud/apiv1/pantry/${PANTRY_ID}/basket/${syncId}`, {
+            method: 'POST', // Pantry usa POST tanto para crear como para actualizar
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(state)
         });
 
         if (response.ok) {
             updateSyncStatus('success', 'Sincronizado');
+            console.log("Sincronización en Pantry exitosa.");
         } else {
-            throw new Error('Servidor ocupado');
+            const errorText = await response.text();
+            throw new Error(errorText || 'Error del servidor');
         }
     } catch (e) {
         console.error("Error en sincronización:", e);
-        updateSyncStatus('offline', 'Error: ' + e.message);
+        // Si falla la nube, al menos avisamos que lo local está bien
+        updateSyncStatus('offline', 'Local OK (Nube con error)');
     }
 }
 
@@ -86,6 +91,7 @@ async function loadFromDatabase() {
     
     let syncId = localStorage.getItem(SYNC_ID_KEY);
     
+    // Si no hay ID, cargamos local
     if (!syncId) {
         loadFromLocalStorage();
         updateSyncStatus('success', 'Local');
@@ -93,24 +99,33 @@ async function loadFromDatabase() {
     }
 
     try {
-        const response = await fetch(`https://kvdb.io/${KVDB_BUCKET}/${syncId}`);
+        const response = await fetch(`https://getpantry.cloud/apiv1/pantry/${PANTRY_ID}/basket/${syncId}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
 
         if (response.ok) {
             const data = await response.json();
+            // Verificamos que los datos tengan la estructura correcta
             if (data && data.groups) {
                 state = data;
                 updateSyncStatus('success', 'Sincronizado');
+                console.log("Datos cargados desde Pantry.");
             } else {
+                console.warn("Datos de la nube vacíos o corruptos, usando local.");
                 loadFromLocalStorage();
             }
-        } else {
+        } else if (response.status === 404) {
+            // El basket aún no existe, usamos local
             loadFromLocalStorage();
-            updateSyncStatus('success', 'Local');
+            updateSyncStatus('success', 'Local (Nueva nube)');
+        } else {
+            throw new Error('Error al conectar');
         }
     } catch (e) {
         console.error("Error cargando de la nube:", e);
         loadFromLocalStorage();
-        updateSyncStatus('offline', 'Error de red');
+        updateSyncStatus('offline', 'Usando copia local');
     }
 
     if (state.theme === 'dark') {
