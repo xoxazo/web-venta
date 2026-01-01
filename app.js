@@ -1,8 +1,7 @@
-// Configuración de JSONbin.io (Persistencia Global Unitaria)
+// Configuración de JSONbin.io (Persistencia Global Automática)
 const JSONBIN_BIN_ID = '6956d92bae596e708fbec9c0';
 const JSONBIN_MASTER_KEY = '$2a$10$k8PX4X2h0wusO15mj1YOVOa7aBmjdr6YKca/1ts3MQ3rLeIHNA3ku';
 const JSONBIN_ACCESS_KEY = '$2a$10$mM..UNQapnjXnJQE0QfBUeoBqUXJHBk1tElUb16AY1CedHOPTR7lu';
-const USER_SESSION_KEY = 'ventas_user_session';
 
 // Estado de la aplicación
 let state = {
@@ -19,82 +18,20 @@ let state = {
         }
     },
     theme: 'dark',
-    version: '4.0'
+    version: '5.0'
 };
 
-// Referencias al DOM
-const articleForm = document.getElementById('article-form');
-const exchangeRateInput = document.getElementById('exchange-rate');
-const articlesBody = document.getElementById('articles-body');
-const manualTotalUsdInput = document.getElementById('manual-total-usd');
-const manualExpensesUsdInput = document.getElementById('manual-expenses-usd');
-const totalInvestmentUsdEl = document.getElementById('total-investment-usd');
-const totalRevenueUsdEl = document.getElementById('total-revenue-usd');
-const netProfitUsdEl = document.getElementById('net-profit-usd');
-const netProfitCupEl = document.getElementById('net-profit-cup');
-const projectedProfitUsdEl = document.getElementById('projected-profit-usd');
-const projectedRevenueUsdEl = document.getElementById('projected-revenue-usd');
-const clearDataBtn = document.getElementById('clear-data-btn');
-const themeToggle = document.getElementById('theme-toggle');
-const groupsListEl = document.getElementById('groups-list');
-const newGroupBtn = document.getElementById('new-group-btn');
-const currentGroupNameEl = document.getElementById('current-group-name');
-const currentGroupDateEl = document.getElementById('current-group-date');
-const saveDbBtn = document.getElementById('save-db-btn');
-const syncIndicator = document.getElementById('sync-indicator');
-const showSyncIdBtn = document.getElementById('show-sync-id');
-
-// Inicialización de Gráficas
-let salesChart;
-let profitChart;
-
-// Variables de Sesión
-let currentUser = null;
+// Variables de Control de Sincronización
 let isSyncing = false;
+let lastServerData = null;
 
-// Referencias al DOM (Login)
-const loginModal = document.getElementById('login-modal');
-const loginForm = document.getElementById('login-form');
-const usernameText = document.getElementById('username-text');
-const logoutBtn = document.getElementById('logout-btn');
-
-// Manejo de Sesión de Usuario (Local)
-async function handleLogin(e) {
-    if (e) e.preventDefault();
-    const user = document.getElementById('login-user').value.trim().toLowerCase();
-    const pass = document.getElementById('login-pass').value.trim();
-    
-    // Validación Estricta: wawita / wawita
-    if (user === 'wawita' && pass === 'wawita') {
-        updateSyncStatus('syncing', 'Iniciando sesión...');
-        
-        currentUser = user;
-        localStorage.setItem(USER_SESSION_KEY, JSON.stringify({ user, pass }));
-        document.body.classList.add('logged-in');
-        usernameText.textContent = user;
-        
-        // Cargar datos de JSONbin inmediatamente
-        await loadFromDatabase();
-    } else {
-        alert('Usuario o contraseña incorrectos.');
-    }
-}
-
-function handleLogout() {
-    if (confirm('¿Cerrar sesión? Los cambios locales se perderán si no están sincronizados.')) {
-        localStorage.removeItem(USER_SESSION_KEY);
-        location.reload();
-    }
-}
-
-// Persistencia en JSONbin.io
+// Persistencia Automática en JSONbin.io
 async function saveToDatabase() {
-    if (!currentUser || isSyncing) return;
+    if (isSyncing) return;
     
     isSyncing = true;
-    updateSyncStatus('syncing', 'Guardando en la nube...');
+    updateSyncStatus('syncing', 'Guardando...');
     
-    // Guardar local como backup rápido
     localStorage.setItem('ventas_state_v2', JSON.stringify(state));
     
     try {
@@ -109,22 +46,18 @@ async function saveToDatabase() {
         });
 
         if (response.ok) {
+            lastServerData = JSON.stringify(state);
             updateSyncStatus('success', 'Sincronizado');
-        } else {
-            throw new Error('Error en JSONbin');
         }
     } catch (e) {
-        console.error("Error al guardar en nube:", e);
-        updateSyncStatus('offline', 'Error de guardado');
+        updateSyncStatus('offline', 'Error de red');
     } finally {
         isSyncing = false;
     }
 }
 
 async function loadFromDatabase() {
-    if (!currentUser) return;
-    
-    updateSyncStatus('syncing', 'Recuperando datos...');
+    if (isSyncing) return;
     
     try {
         const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
@@ -137,18 +70,20 @@ async function loadFromDatabase() {
 
         if (response.ok) {
             const result = await response.json();
-            if (result && result.record) {
-                state = result.record;
+            const serverState = result.record;
+            const serverStateStr = JSON.stringify(serverState);
+
+            if (serverStateStr !== JSON.stringify(state) && serverStateStr !== lastServerData) {
+                state = serverState;
+                lastServerData = serverStateStr;
                 localStorage.setItem('ventas_state_v2', JSON.stringify(state));
                 updateUI();
                 initCharts();
-                updateSyncStatus('success', 'Datos actualizados');
+                updateSyncStatus('success', 'Actualizado');
             }
         }
     } catch (e) {
-        console.warn("Usando copia local por error de red.");
-        loadFromLocalStorage();
-        updateUI();
+        console.warn("Error de red.");
     }
 }
 
@@ -170,9 +105,22 @@ if (showSyncIdBtn) {
 function loadFromLocalStorage() {
     const saved = localStorage.getItem('ventas_state_v2');
     if (saved) {
-        state = JSON.parse(saved);
-        console.log("Datos cargados desde LocalStorage");
+        try {
+            const parsed = JSON.parse(saved);
+            state = { ...state, ...parsed };
+        } catch (e) {
+            console.error("Error al cargar localStorage");
+        }
     }
+}
+
+function updateSyncStatus(status, text) {
+    const syncIndicator = document.getElementById('sync-indicator');
+    const syncText = document.getElementById('sync-text');
+    if (!syncIndicator || !syncText) return;
+    
+    syncIndicator.className = 'sync-indicator ' + status;
+    syncText.textContent = text;
 }
 
 function initCharts() {
@@ -548,28 +496,21 @@ function importData(event) {
     reader.readAsText(file);
 }
 
-// Inicialización corregida
+// Inicialización de la Aplicación
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Verificar sesión previa
-    const savedSession = localStorage.getItem(USER_SESSION_KEY);
-    if (savedSession) {
-        const session = JSON.parse(savedSession);
-        // Validar que la sesión guardada sea la permitida
-        if (session.user === 'wawita' && session.pass === 'wawita') {
-            currentUser = session.user;
-            document.body.classList.add('logged-in');
-            loadFromDatabase(); 
-        } else {
-            localStorage.removeItem(USER_SESSION_KEY);
-        }
-    }
+    // 1. Cargar datos locales primero para rapidez
+    loadFromLocalStorage();
+    updateUI();
+    initCharts();
 
-    // 2. Listeners de Auth
-    if (loginForm) loginForm.addEventListener('submit', handleLogin);
-    if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+    // 2. Cargar datos de la nube inmediatamente
+    loadFromDatabase();
 
-    // 3. Listener de Guardado Cloud
-    if (saveDbBtn) saveDbBtn.addEventListener('click', saveToDatabase);
+    // 3. Configurar Sondeo (Polling) cada 5 segundos para ver si hay cambios en otros dispositivos
+    setInterval(loadFromDatabase, 5000);
 
-    // ... resto de listeners existentes ...
+    // 4. Configurar Guardado Automático ante cualquier cambio
+    // Observar cambios en el DOM que indiquen cambios en el estado no es tan eficiente como disparar el save
+    // en los manejadores de eventos existentes, pero como ya tenemos saveToDatabase() en cada acción,
+    // solo nos aseguramos de que no haya restos de login.
 });
