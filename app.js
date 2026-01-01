@@ -18,8 +18,34 @@ let state = {
         }
     },
     theme: 'dark',
-    version: '5.0'
+    version: '5.1'
 };
+
+// Referencias al DOM (Globales)
+let articleForm, exchangeRateInput, articlesBody, manualTotalUsdInput, manualExpensesUsdInput;
+let totalInvestmentUsdEl, totalRevenueUsdEl, netProfitUsdEl, netProfitCupEl, projectedProfitUsdEl, projectedRevenueUsdEl;
+let clearDataBtn, themeToggle, groupsListEl, newGroupBtn, currentGroupNameEl, currentGroupDateEl, syncIndicator;
+
+function initDOMRefs() {
+    articleForm = document.getElementById('article-form');
+    exchangeRateInput = document.getElementById('exchange-rate');
+    articlesBody = document.getElementById('articles-body');
+    manualTotalUsdInput = document.getElementById('manual-total-usd');
+    manualExpensesUsdInput = document.getElementById('manual-expenses-usd');
+    totalInvestmentUsdEl = document.getElementById('total-investment-usd');
+    totalRevenueUsdEl = document.getElementById('total-revenue-usd');
+    netProfitUsdEl = document.getElementById('net-profit-usd');
+    netProfitCupEl = document.getElementById('net-profit-cup');
+    projectedProfitUsdEl = document.getElementById('projected-profit-usd');
+    projectedRevenueUsdEl = document.getElementById('projected-revenue-usd');
+    clearDataBtn = document.getElementById('clear-data-btn');
+    themeToggle = document.getElementById('theme-toggle');
+    groupsListEl = document.getElementById('groups-list');
+    newGroupBtn = document.getElementById('new-group-btn');
+    currentGroupNameEl = document.getElementById('current-group-name');
+    currentGroupDateEl = document.getElementById('current-group-date');
+    syncIndicator = document.getElementById('sync-indicator');
+}
 
 // Variables de Control de Sincronización
 let isSyncing = false;
@@ -352,78 +378,9 @@ function updateCharts(soldQty, stockQty, investment, revenue, expenses, netProfi
     }
 }
 
-// Event Handlers
-articleForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const activeGroup = state.groups[state.activeGroupId];
-    const name = document.getElementById('article-name').value;
-    const totalQuantity = parseInt(document.getElementById('article-quantity').value);
-    const costUsd = parseFloat(document.getElementById('article-cost-usd').value);
-    const priceUsd = parseFloat(document.getElementById('article-price-usd').value);
-
-    activeGroup.articles.push({
-        name,
-        totalQuantity,
-        soldQuantity: 0,
-        costUsd,
-        priceUsd
-    });
-
-    articleForm.reset();
-    saveToDatabase();
-    updateUI();
-});
-
-exchangeRateInput.addEventListener('input', (e) => {
-    state.groups[state.activeGroupId].exchangeRate = parseFloat(e.target.value) || 0;
-    saveToDatabase();
-    updateUI();
-});
-
-clearDataBtn.addEventListener('click', () => {
-    if (confirm('¿Estás seguro de que quieres borrar TODOS los artículos de ESTA venta?')) {
-        state.groups[state.activeGroupId].articles = [];
-        state.groups[state.activeGroupId].manualTotalUsd = 0;
-        state.groups[state.activeGroupId].manualExpensesUsd = 0;
-        saveToDatabase();
-        updateUI();
-    }
-});
-
-manualTotalUsdInput.addEventListener('input', (e) => {
-    state.groups[state.activeGroupId].manualTotalUsd = parseFloat(e.target.value) || 0;
-    saveToDatabase();
-    updateUI();
-});
-
-manualExpensesUsdInput.addEventListener('input', (e) => {
-    state.groups[state.activeGroupId].manualExpensesUsd = parseFloat(e.target.value) || 0;
-    saveToDatabase();
-    updateUI();
-});
-
-newGroupBtn.addEventListener('click', addGroup);
-
-if (saveDbBtn) {
-    saveDbBtn.addEventListener('click', saveToDatabase);
-}
-
-themeToggle.addEventListener('click', () => {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    if (isDark) {
-        document.documentElement.removeAttribute('data-theme');
-        state.theme = 'light';
-        themeToggle.textContent = '🌓';
-    } else {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        state.theme = 'dark';
-        themeToggle.textContent = '☀️';
-    }
-    
-    initCharts();
-    saveToDatabase();
-    updateUI();
-});
+// Inicialización de Gráficas
+let salesChart;
+let profitChart;
 
 window.updateSold = (index, delta) => {
     const activeGroup = state.groups[state.activeGroupId];
@@ -498,19 +455,103 @@ function importData(event) {
 
 // Inicialización de la Aplicación
 document.addEventListener('DOMContentLoaded', () => {
+    // 0. Inicializar referencias al DOM
+    initDOMRefs();
+    
     // 1. Cargar datos locales primero para rapidez
     loadFromLocalStorage();
+    
+    // 2. Configurar Listeners que dependen de las refs inicializadas
+    setupEventListeners();
+    
+    // 3. Renderizar UI inicial
     updateUI();
     initCharts();
 
-    // 2. Cargar datos de la nube inmediatamente
+    // 4. Cargar datos de la nube inmediatamente
     loadFromDatabase();
 
-    // 3. Configurar Sondeo (Polling) cada 5 segundos para ver si hay cambios en otros dispositivos
+    // 5. Configurar Sondeo (Polling) cada 5 segundos
     setInterval(loadFromDatabase, 5000);
-
-    // 4. Configurar Guardado Automático ante cualquier cambio
-    // Observar cambios en el DOM que indiquen cambios en el estado no es tan eficiente como disparar el save
-    // en los manejadores de eventos existentes, pero como ya tenemos saveToDatabase() en cada acción,
-    // solo nos aseguramos de que no haya restos de login.
 });
+
+function setupEventListeners() {
+    if (articleForm) {
+        articleForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const activeGroup = state.groups[state.activeGroupId];
+            const name = document.getElementById('article-name').value;
+            const totalQuantity = parseInt(document.getElementById('article-quantity').value);
+            const costUsd = parseFloat(document.getElementById('article-cost-usd').value);
+            const priceUsd = parseFloat(document.getElementById('article-price-usd').value);
+
+            activeGroup.articles.push({
+                name,
+                totalQuantity,
+                soldQuantity: 0,
+                costUsd,
+                priceUsd
+            });
+
+            articleForm.reset();
+            saveToDatabase();
+            updateUI();
+        });
+    }
+
+    if (exchangeRateInput) {
+        exchangeRateInput.addEventListener('input', (e) => {
+            state.groups[state.activeGroupId].exchangeRate = parseFloat(e.target.value) || 0;
+            saveToDatabase();
+            updateUI();
+        });
+    }
+
+    if (clearDataBtn) {
+        clearDataBtn.addEventListener('click', () => {
+            if (confirm('¿Estás seguro de que quieres borrar TODOS los artículos de ESTA venta?')) {
+                state.groups[state.activeGroupId].articles = [];
+                state.groups[state.activeGroupId].manualTotalUsd = 0;
+                state.groups[state.activeGroupId].manualExpensesUsd = 0;
+                saveToDatabase();
+                updateUI();
+            }
+        });
+    }
+
+    if (manualTotalUsdInput) {
+        manualTotalUsdInput.addEventListener('input', (e) => {
+            state.groups[state.activeGroupId].manualTotalUsd = parseFloat(e.target.value) || 0;
+            saveToDatabase();
+            updateUI();
+        });
+    }
+
+    if (manualExpensesUsdInput) {
+        manualExpensesUsdInput.addEventListener('input', (e) => {
+            state.groups[state.activeGroupId].manualExpensesUsd = parseFloat(e.target.value) || 0;
+            saveToDatabase();
+            updateUI();
+        });
+    }
+
+    if (newGroupBtn) newGroupBtn.addEventListener('click', addGroup);
+
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            if (isDark) {
+                document.documentElement.removeAttribute('data-theme');
+                state.theme = 'light';
+                themeToggle.textContent = '🌓';
+            } else {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                state.theme = 'dark';
+                themeToggle.textContent = '☀️';
+            }
+            initCharts();
+            saveToDatabase();
+            updateUI();
+        });
+    }
+}

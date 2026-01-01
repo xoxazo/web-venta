@@ -33,6 +33,7 @@ body {
     display: flex;
     height: 100vh;
     width: 100vw;
+    overflow: hidden; /* Evita scroll doble */
 }
 
 .main-content {
@@ -40,6 +41,9 @@ body {
     overflow-y: auto;
     padding: 2rem;
     background: var(--bg-body);
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
 }
 
 .main-header {
@@ -139,10 +143,20 @@ body {
 }
 
 .container {
-    padding: 30px;
-    width: 100%;
-    max-width: 1200px;
-    margin: 0 auto;
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden; /* Evita scroll doble */
+}
+
+.main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2rem;
+    background: var(--bg-body);
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
 }
 
 header {
