@@ -27,7 +27,11 @@
                     <small id="current-group-date"></small>
                 </div>
                 <div class="header-controls">
-                    <button id="save-db-btn" class="save-btn" title="Guardar en Base de Datos">💾 Salvar Cambios</button>
+                    <div id="sync-indicator" class="sync-indicator" title="Estado de sincronización">
+                        <span class="sync-dot"></span>
+                        <span class="sync-text">Sincronizado</span>
+                    </div>
+                    <button id="save-db-btn" class="save-btn" title="Sincronizar ahora">☁️ Sincronizar</button>
                     <button id="theme-toggle" title="Cambiar modo">🌓</button>
                     <div class="exchange-rate-container">
                         <label for="exchange-rate">1 USD =</label>
