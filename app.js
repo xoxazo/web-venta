@@ -1,6 +1,8 @@
-// Configuración de Sincronización (Usando Cloudflare Worker - Alta Disponibilidad)
+// Configuración de Sincronización (Infraestructura de Datos)
 const SYNC_ENDPOINT = 'https://ventas-db.kinghost.workers.dev';
 const SYNC_ID_KEY = 'ventas_sync_id';
+const LAST_SYNC_KEY = 'ventas_last_sync';
+const SYNC_RETRY_DELAY = 5000; // 5 segundos para reintento automático
 
 // Estado de la aplicación
 let state = {
@@ -16,7 +18,8 @@ let state = {
             manualExpensesUsd: 0
         }
     },
-    theme: 'light'
+    theme: 'light',
+    version: '2.1' // Control de versiones para migraciones de datos
 };
 
 // Referencias al DOM
@@ -45,17 +48,37 @@ const showSyncIdBtn = document.getElementById('show-sync-id');
 let salesChart;
 let profitChart;
 
-function updateSyncStatus(status, text) {
+// Variables de control de red
+let isSyncing = false;
+let retryTimer = null;
+
+function updateSyncStatus(status, text, detail = '') {
     if (!syncIndicator) return;
     syncIndicator.className = 'sync-indicator ' + status;
     const textEl = syncIndicator.querySelector('.sync-text');
     if (textEl) textEl.textContent = text;
+    
+    // Feedback visual en consola y título de la página para depuración rápida
+    if (detail) {
+        console.log(`[Sync Status] ${status.toUpperCase()}: ${detail}`);
+        if (status === 'offline') {
+            document.title = `⚠️ Ventas - ${text}`;
+        } else {
+            document.title = `Ventas - ${state.groups[state.activeGroupId]?.name || 'App'}`;
+        }
+    }
 }
 
-// Persistencia Global (Simple y Directa)
-async function saveToDatabase() {
+// Implementación de Persistencia Robusta (LocalStorage + Cloud)
+async function saveToDatabase(isRetry = false) {
+    if (isSyncing && !isRetry) return; // Evitar colisiones de guardado
+    
+    isSyncing = true;
     updateSyncStatus('syncing', 'Guardando...');
+    
+    // 1. Guardar localmente siempre (Seguridad inmediata)
     localStorage.setItem('ventas_state_v2', JSON.stringify(state));
+    localStorage.setItem(LAST_SYNC_KEY, Date.now());
 
     let syncId = localStorage.getItem(SYNC_ID_KEY);
     if (!syncId) {
@@ -64,62 +87,96 @@ async function saveToDatabase() {
     }
     
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
         const response = await fetch(`${SYNC_ENDPOINT}/save`, {
             method: 'POST',
             mode: 'cors',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: syncId, data: state })
+            body: JSON.stringify({ id: syncId, data: state }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (response.ok) {
             updateSyncStatus('success', 'Sincronizado');
+            isSyncing = false;
+            if (retryTimer) {
+                clearTimeout(retryTimer);
+                retryTimer = null;
+            }
         } else {
-            throw new Error('Servidor');
+            throw new Error(`HTTP ${response.status}`);
         }
     } catch (e) {
-        console.warn("Error nube, usando local:", e);
-        updateSyncStatus('offline', 'Local OK');
+        const errorMsg = e.name === 'AbortError' ? 'Timeout (Red lenta)' : e.message;
+        updateSyncStatus('offline', 'Local OK (Reintentando...)', errorMsg);
+        isSyncing = false;
+        
+        // Programar reintento automático si falló por red
+        if (!retryTimer) {
+            retryTimer = setTimeout(() => saveToDatabase(true), SYNC_RETRY_DELAY);
+        }
     }
 }
 
 async function loadFromDatabase() {
-    updateSyncStatus('syncing', 'Cargando...');
+    updateSyncStatus('syncing', 'Cargando datos...');
     
     let syncId = localStorage.getItem(SYNC_ID_KEY);
     
+    // Primero cargamos local para tener algo inmediato que mostrar
+    loadFromLocalStorage();
+    updateUI(); 
+
     if (!syncId) {
-        loadFromLocalStorage();
         updateSyncStatus('success', 'Local');
         return;
     }
 
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+
         const response = await fetch(`${SYNC_ENDPOINT}/load?id=${syncId}`, {
             method: 'GET',
-            mode: 'cors'
+            mode: 'cors',
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (response.ok) {
             const result = await response.json();
             if (result && result.data) {
-                state = result.data;
+                // Lógica de fusión de datos (Conflict resolution básica)
+                // Si los datos de la nube son más recientes o diferentes, actualizamos
+                const cloudState = result.data;
+                if (JSON.stringify(cloudState) !== JSON.stringify(state)) {
+                    state = cloudState;
+                    localStorage.setItem('ventas_state_v2', JSON.stringify(state));
+                    updateUI();
+                    initCharts();
+                }
                 updateSyncStatus('success', 'Sincronizado');
-            } else {
-                loadFromLocalStorage();
             }
         } else {
-            loadFromLocalStorage();
-            updateSyncStatus('success', 'Local');
+            updateSyncStatus('offline', 'Modo Local');
         }
     } catch (e) {
-        console.error("Error red:", e);
-        loadFromLocalStorage();
-        updateSyncStatus('offline', 'Local');
+        console.warn("Error cargando de nube, usando copia local:", e.message);
+        updateSyncStatus('offline', 'Local (Sin Red)');
     }
 
+    // Aplicar tema después de cargar
     if (state.theme === 'dark') {
         document.documentElement.setAttribute('data-theme', 'dark');
-        themeToggle.textContent = '☀️';
+        if (themeToggle) themeToggle.textContent = '☀️';
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+        if (themeToggle) themeToggle.textContent = '🌓';
     }
     
     initCharts();
