@@ -34,6 +34,9 @@ const newGroupBtn = document.getElementById('new-group-btn');
 const currentGroupNameEl = document.getElementById('current-group-name');
 const currentGroupDateEl = document.getElementById('current-group-date');
 const saveDbBtn = document.getElementById('save-db-btn');
+const exportBtn = document.getElementById('export-btn');
+const importBtn = document.getElementById('import-btn');
+const importInput = document.getElementById('import-input');
 
 // Inicialización de Gráficas
 let salesChart;
@@ -413,6 +416,50 @@ manualExpensesUsdInput.addEventListener('input', (e) => {
 });
 
 newGroupBtn.addEventListener('click', addGroup);
+
+function exportData() {
+    const dataStr = JSON.stringify(state, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `backup_ventas_${new Date().toISOString().slice(0,10)}.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+}
+
+function importData(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const importedState = JSON.parse(e.target.result);
+            
+            // Validación básica de estructura
+            if (importedState.groups && typeof importedState.groups === 'object') {
+                state = importedState;
+                saveToDatabase();
+                updateUI();
+                alert('Base de datos importada con éxito.');
+            } else {
+                alert('El archivo no tiene un formato válido.');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Error al leer el archivo JSON.');
+        }
+    };
+    reader.readAsText(file);
+    // Limpiar el input para permitir importar el mismo archivo de nuevo si es necesario
+    event.target.value = '';
+}
+
+exportBtn.addEventListener('click', exportData);
+importBtn.addEventListener('click', () => importInput.click());
+importInput.addEventListener('change', importData);
 
 if (saveDbBtn) {
     saveDbBtn.addEventListener('click', saveToDatabase);
