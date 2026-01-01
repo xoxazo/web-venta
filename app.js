@@ -77,16 +77,22 @@ async function saveToDatabase() {
                 'apikey': SUPABASE_KEY,
                 'Authorization': `Bearer ${SUPABASE_KEY}`,
                 'Content-Type': 'application/json',
-                'Prefer': 'resolution=merge-duplicates'
+                'Prefer': 'resolution=merge-duplicates, return=minimal'
             },
             body: JSON.stringify({ id: syncId, data: state })
         });
 
-        if (response.ok) {
+        if (response.ok || response.status === 201 || response.status === 204) {
             updateSyncStatus('success', 'Sincronizado');
+            console.log("Sincronización exitosa en Supabase");
         } else {
-            const err = await response.json();
-            throw new Error(err.message || 'Error Supabase');
+            const errText = await response.text();
+            let errorMessage = 'Error Supabase';
+            try {
+                const errJson = JSON.parse(errText);
+                errorMessage = errJson.message || errorMessage;
+            } catch(e) {}
+            throw new Error(errorMessage + " (" + response.status + ")");
         }
     } catch (e) {
         console.error("Detalle técnico del error:", e);
@@ -113,9 +119,11 @@ async function loadFromDatabase() {
 
     try {
         const response = await fetch(`${SUPABASE_URL}/rest/v1/ventas?id=eq.${syncId}&select=data`, {
+            method: 'GET',
             headers: {
                 'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Range': '0-0' // Solo queremos la primera fila
             }
         });
 
@@ -124,17 +132,19 @@ async function loadFromDatabase() {
             if (rows && rows.length > 0 && rows[0].data) {
                 state = rows[0].data;
                 updateSyncStatus('success', 'Sincronizado');
+                console.log("Datos cargados correctamente de Supabase");
             } else {
                 loadFromLocalStorage();
-                updateSyncStatus('success', 'Local (Vacío en nube)');
+                updateSyncStatus('success', 'Local (Nube vacía)');
             }
         } else {
-            throw new Error('No se pudo leer de la nube');
+            const errText = await response.text();
+            throw new Error("Error " + response.status);
         }
     } catch (e) {
         console.error("Error de carga:", e);
         loadFromLocalStorage();
-        updateSyncStatus('offline', 'Error de red');
+        updateSyncStatus('offline', 'Error red: ' + e.message);
     }
 
     if (state.theme === 'dark') {
