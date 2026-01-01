@@ -1,9 +1,8 @@
-// Configuración de Sincronización Global (Infraestructura de Datos Unitaria)
-const SYNC_ENDPOINT = 'https://ventas-db.kinghost.workers.dev';
-const AUTH_ENDPOINT = 'https://ventas-db.kinghost.workers.dev/auth'; // Endpoint para validación unitaria
-const LAST_SYNC_KEY = 'ventas_last_sync';
+// Configuración de JSONbin.io (Persistencia Global Unitaria)
+const JSONBIN_BIN_ID = '6956d92bae596e708fbec9c0';
+const JSONBIN_MASTER_KEY = '$2a$10$k8PX4X2h0wusO15mj1YOVOa7aBmjdr6YKca/1ts3MQ3rLeIHNA3ku';
+const JSONBIN_ACCESS_KEY = '$2a$10$mM..UNQapnjXnJQE0QfBUeoBqUXJHBk1tElUb16AY1CedHOPTR7lu';
 const USER_SESSION_KEY = 'ventas_user_session';
-const SYNC_RETRY_DELAY = 5000;
 
 // Estado de la aplicación
 let state = {
@@ -19,8 +18,8 @@ let state = {
             manualExpensesUsd: 0
         }
     },
-    theme: 'light',
-    version: '3.0' 
+    theme: 'dark',
+    version: '4.0'
 };
 
 // Referencias al DOM
@@ -52,7 +51,6 @@ let profitChart;
 // Variables de Sesión
 let currentUser = null;
 let isSyncing = false;
-let retryTimer = null;
 
 // Referencias al DOM (Login)
 const loginModal = document.getElementById('login-modal');
@@ -60,26 +58,25 @@ const loginForm = document.getElementById('login-form');
 const usernameText = document.getElementById('username-text');
 const logoutBtn = document.getElementById('logout-btn');
 
-// Manejo de Sesión de Usuario
+// Manejo de Sesión de Usuario (Local)
 async function handleLogin(e) {
-    e.preventDefault();
+    if (e) e.preventDefault();
     const user = document.getElementById('login-user').value.trim().toLowerCase();
-    const pass = document.getElementById('login-pass').value;
+    const pass = document.getElementById('login-pass').value.trim();
     
     // Validación Estricta: wawita / wawita
     if (user === 'wawita' && pass === 'wawita') {
-        updateSyncStatus('syncing', 'Autenticando...');
+        updateSyncStatus('syncing', 'Iniciando sesión...');
         
         currentUser = user;
         localStorage.setItem(USER_SESSION_KEY, JSON.stringify({ user, pass }));
         document.body.classList.add('logged-in');
         usernameText.textContent = user;
         
-        // Cargar datos de la nube
+        // Cargar datos de JSONbin inmediatamente
         await loadFromDatabase();
     } else {
-        alert('Acceso Denegado. Credenciales incorrectas.');
-        updateSyncStatus('offline', 'Error Login');
+        alert('Usuario o contraseña incorrectos.');
     }
 }
 
@@ -90,63 +87,66 @@ function handleLogout() {
     }
 }
 
-// Persistencia Robusta Unitaria (Identificada por Usuario)
-async function saveToDatabase(isRetry = false) {
-    if (!currentUser || (isSyncing && !isRetry)) return;
+// Persistencia en JSONbin.io
+async function saveToDatabase() {
+    if (!currentUser || isSyncing) return;
     
     isSyncing = true;
-    updateSyncStatus('syncing', 'Sincronizando...');
+    updateSyncStatus('syncing', 'Guardando en la nube...');
     
+    // Guardar local como backup rápido
     localStorage.setItem('ventas_state_v2', JSON.stringify(state));
     
     try {
-        const session = JSON.parse(localStorage.getItem(USER_SESSION_KEY));
-        const response = await fetch(`${SYNC_ENDPOINT}/save`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                id: currentUser, // El ID ahora es el nombre de usuario
-                pass: session.pass, // Validación simple en worker
-                data: state 
-            })
+        const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Master-Key': JSONBIN_MASTER_KEY,
+                'X-Access-Key': JSONBIN_ACCESS_KEY
+            },
+            body: JSON.stringify(state)
         });
 
         if (response.ok) {
             updateSyncStatus('success', 'Sincronizado');
-            isSyncing = false;
         } else {
-            throw new Error('Error Servidor');
+            throw new Error('Error en JSONbin');
         }
     } catch (e) {
-        updateSyncStatus('offline', 'Copia Local', e.message);
+        console.error("Error al guardar en nube:", e);
+        updateSyncStatus('offline', 'Error de guardado');
+    } finally {
         isSyncing = false;
-        if (!retryTimer) retryTimer = setTimeout(() => saveToDatabase(true), SYNC_RETRY_DELAY);
     }
 }
 
 async function loadFromDatabase() {
     if (!currentUser) return;
     
-    updateSyncStatus('syncing', 'Descargando datos...');
+    updateSyncStatus('syncing', 'Recuperando datos...');
     
     try {
-        const session = JSON.parse(localStorage.getItem(USER_SESSION_KEY));
-        const response = await fetch(`${SYNC_ENDPOINT}/load?id=${currentUser}&pass=${session.pass}`, {
-            method: 'GET'
+        const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_MASTER_KEY,
+                'X-Access-Key': JSONBIN_ACCESS_KEY
+            }
         });
 
         if (response.ok) {
             const result = await response.json();
-            if (result && result.data) {
-                state = result.data;
+            if (result && result.record) {
+                state = result.record;
                 localStorage.setItem('ventas_state_v2', JSON.stringify(state));
                 updateUI();
                 initCharts();
-                updateSyncStatus('success', 'Sincronizado');
+                updateSyncStatus('success', 'Datos actualizados');
             }
         }
     } catch (e) {
-        console.warn("Cargando desde copia local...");
+        console.warn("Usando copia local por error de red.");
         loadFromLocalStorage();
         updateUI();
     }
@@ -558,7 +558,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (session.user === 'wawita' && session.pass === 'wawita') {
             currentUser = session.user;
             document.body.classList.add('logged-in');
-            usernameText.textContent = currentUser;
             loadFromDatabase(); 
         } else {
             localStorage.removeItem(USER_SESSION_KEY);
@@ -569,11 +568,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (loginForm) loginForm.addEventListener('submit', handleLogin);
     if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
 
-    // Listeners de Respaldo
-    if (backupBtn) backupBtn.addEventListener('click', exportData);
-    if (restoreBtn) restoreBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        importFileInput.click();
-    });
-    if (importFileInput) importFileInput.addEventListener('change', importData);
+    // 3. Listener de Guardado Cloud
+    if (saveDbBtn) saveDbBtn.addEventListener('click', saveToDatabase);
+
+    // ... resto de listeners existentes ...
 });

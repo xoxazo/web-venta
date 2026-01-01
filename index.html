@@ -53,10 +53,11 @@
                     <small id="current-group-date"></small>
                 </div>
                 <div class="header-controls">
-                    <button id="backup-db-btn" class="backup-btn" title="Descargar Copia de Seguridad (Archivo TXT)">📥 Respaldar</button>
-                    <button id="restore-db-btn" class="restore-btn" title="Cargar Copia de Seguridad (Subir Archivo)">📤 Restaurar</button>
-                    <input type="file" id="import-file" style="display: none;" accept=".txt,.json">
-                    <button id="save-db-btn" class="save-btn" title="Guardar en Base de Datos">💾 Salvar</button>
+                    <div id="sync-indicator" class="sync-indicator">
+                        <span class="sync-dot"></span>
+                        <span class="sync-text">Sincronizado</span>
+                    </div>
+                    <button id="save-db-btn" class="save-btn" title="Sincronizar ahora con la nube">☁️ Sincronizar</button>
                 </div>
             </header>
 

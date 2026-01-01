@@ -183,37 +183,32 @@ header {
     opacity: 1;
 }
 
-.backup-btn, .restore-btn, .save-btn {
-    padding: 8px 15px;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 600;
-    transition: all 0.2s;
+.sync-indicator {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-body);
+    border: 1px solid var(--border-color);
+    border-radius: 50px;
+    font-size: 0.8rem;
 }
 
-.backup-btn {
-    background: #475569;
-    color: white;
+.sync-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #94a3b8;
 }
 
-.restore-btn {
-    background: #64748b;
-    color: white;
-}
+.sync-indicator.success .sync-dot { background: #10b981; }
+.sync-indicator.syncing .sync-dot { background: #3b82f6; animation: pulse 1.5s infinite; }
+.sync-indicator.offline .sync-dot { background: #ef4444; }
 
-.save-btn {
-    background: var(--primary-color);
-    color: white;
-}
-
-.backup-btn:hover, .restore-btn:hover, .save-btn:hover {
-    filter: brightness(1.2);
-    transform: translateY(-1px);
+@keyframes pulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+    100% { opacity: 1; transform: scale(1); }
 }
 
 .save-btn.saving {
