@@ -27,6 +27,8 @@ const netProfitUsdEl = document.getElementById('net-profit-usd');
 const netProfitCupEl = document.getElementById('net-profit-cup');
 const projectedProfitUsdEl = document.getElementById('projected-profit-usd');
 const projectedRevenueUsdEl = document.getElementById('projected-revenue-usd');
+const projectedProfitCupEl = document.getElementById('projected-profit-cup');
+const projectedRevenueCupEl = document.getElementById('projected-revenue-cup');
 const clearDataBtn = document.getElementById('clear-data-btn');
 const themeToggle = document.getElementById('theme-toggle');
 const groupsListEl = document.getElementById('groups-list');
@@ -366,6 +368,9 @@ function updateUI() {
     
     projectedProfitUsdEl.textContent = `$${projectedProfitUsd.toFixed(2)}`;
     projectedRevenueUsdEl.textContent = `Ingresos totales: $${totalProjectedRevenue.toFixed(2)}`;
+    
+    projectedProfitCupEl.textContent = `${(projectedProfitUsd * activeGroup.exchangeRate).toLocaleString()} CUP`;
+    projectedRevenueCupEl.textContent = `Ingresos totales: ${(totalProjectedRevenue * activeGroup.exchangeRate).toLocaleString()} CUP`;
 
     // Actualizar Gráficas
     const sortedArticles = [...activeGroup.articles].sort((a, b) => b.soldQuantity - a.soldQuantity).slice(0, 5);
