@@ -41,6 +41,8 @@ const importInput = document.getElementById('import-input');
 // Inicialización de Gráficas
 let salesChart;
 let profitChart;
+let topProductsChart;
+let marginChart;
 
 function initCharts() {
     const isDark = state.theme === 'dark';
@@ -49,33 +51,41 @@ function initCharts() {
 
     const ctxSales = document.getElementById('salesChart').getContext('2d');
     const ctxProfit = document.getElementById('profitChart').getContext('2d');
+    const ctxTopProducts = document.getElementById('topProductsChart').getContext('2d');
+    const ctxMargin = document.getElementById('marginChart').getContext('2d');
 
     // Destruir si existen
     if (salesChart) salesChart.destroy();
     if (profitChart) profitChart.destroy();
+    if (topProductsChart) topProductsChart.destroy();
+    if (marginChart) marginChart.destroy();
 
     salesChart = new Chart(ctxSales, {
-        type: 'pie',
+        type: 'doughnut',
         data: {
             labels: ['Vendidos', 'Stock'],
             datasets: [{
                 data: [0, 0],
                 backgroundColor: ['#22c55e', '#ef4444'],
                 borderWidth: isDark ? 2 : 1,
-                borderColor: isDark ? '#1e293b' : '#fff'
+                borderColor: isDark ? '#1e293b' : '#fff',
+                hoverOffset: 15
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            cutout: '70%',
             plugins: {
                 title: { 
                     display: true, 
-                    text: 'Distribución de Unidades',
-                    color: textColor
+                    text: 'Estado del Inventario',
+                    color: textColor,
+                    font: { size: 16, weight: 'bold' }
                 },
                 legend: {
-                    labels: { color: textColor }
+                    position: 'bottom',
+                    labels: { color: textColor, padding: 20 }
                 }
             }
         }
@@ -84,12 +94,13 @@ function initCharts() {
     profitChart = new Chart(ctxProfit, {
         type: 'bar',
         data: {
-            labels: ['Inversión', 'Vendido', 'Gastos', 'Ganancia Neta'],
+            labels: ['Inversión', 'Ventas', 'Gastos', 'Ganancia'],
             datasets: [{
                 label: 'USD',
                 data: [0, 0, 0, 0],
                 backgroundColor: ['#3b82f6', '#22c55e', '#ef4444', '#8b5cf6'],
-                borderRadius: 8
+                borderRadius: 8,
+                barThickness: 40
             }]
         },
         options: {
@@ -98,12 +109,11 @@ function initCharts() {
             plugins: {
                 title: { 
                     display: true, 
-                    text: 'Análisis de Rentabilidad (USD)',
-                    color: textColor
+                    text: 'Balance Financiero (USD)',
+                    color: textColor,
+                    font: { size: 16, weight: 'bold' }
                 },
-                legend: {
-                    display: false
-                }
+                legend: { display: false }
             },
             scales: {
                 y: {
@@ -115,6 +125,73 @@ function initCharts() {
                     grid: { display: false },
                     ticks: { color: textColor }
                 }
+            }
+        }
+    });
+
+    topProductsChart = new Chart(ctxTopProducts, {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Unidades Vendidas',
+                data: [],
+                backgroundColor: '#3b82f6',
+                borderRadius: 6
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: { 
+                    display: true, 
+                    text: 'Top Artículos Más Vendidos',
+                    color: textColor,
+                    font: { size: 16, weight: 'bold' }
+                },
+                legend: { display: false }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    grid: { color: gridColor },
+                    ticks: { color: textColor, stepSize: 1 }
+                },
+                y: {
+                    grid: { display: false },
+                    ticks: { color: textColor }
+                }
+            }
+        }
+    });
+
+    marginChart = new Chart(ctxMargin, {
+        type: 'doughnut',
+        data: {
+            labels: ['Margen Ganancia', 'Resto'],
+            datasets: [{
+                data: [0, 100],
+                backgroundColor: ['#8b5cf6', gridColor],
+                borderWidth: 0,
+                circumference: 180,
+                rotation: 270,
+                cutout: '80%'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: { 
+                    display: true, 
+                    text: '% Margen sobre Inversión',
+                    color: textColor,
+                    font: { size: 16, weight: 'bold' }
+                },
+                legend: { display: false },
+                tooltip: { enabled: false }
             }
         }
     });
@@ -291,7 +368,14 @@ function updateUI() {
     projectedRevenueUsdEl.textContent = `Ingresos totales: $${totalProjectedRevenue.toFixed(2)}`;
 
     // Actualizar Gráficas
-    updateCharts(totalSoldQty, totalStockQty, activeGroup.manualTotalUsd, totalRevenue, activeGroup.manualExpensesUsd, netProfitUsd);
+    const sortedArticles = [...activeGroup.articles].sort((a, b) => b.soldQuantity - a.soldQuantity).slice(0, 5);
+    const topLabels = sortedArticles.map(a => a.name);
+    const topData = sortedArticles.map(a => a.soldQuantity);
+    
+    const totalCosts = activeGroup.manualTotalUsd + activeGroup.manualExpensesUsd;
+    const profitMargin = totalCosts > 0 ? (netProfitUsd / totalCosts) * 100 : 0;
+
+    updateCharts(totalSoldQty, totalStockQty, activeGroup.manualTotalUsd, totalRevenue, activeGroup.manualExpensesUsd, netProfitUsd, topLabels, topData, profitMargin);
     
     // Actualizar lista de grupos
     renderGroups();
@@ -354,7 +438,7 @@ function deleteGroup(id) {
     }
 }
 
-function updateCharts(soldQty, stockQty, investment, revenue, expenses, netProfit) {
+function updateCharts(soldQty, stockQty, investment, revenue, expenses, netProfit, topLabels, topData, profitMargin) {
     if (salesChart) {
         salesChart.data.datasets[0].data = [soldQty, stockQty];
         salesChart.update();
@@ -362,6 +446,17 @@ function updateCharts(soldQty, stockQty, investment, revenue, expenses, netProfi
     if (profitChart) {
         profitChart.data.datasets[0].data = [investment, revenue, expenses, netProfit];
         profitChart.update();
+    }
+    if (topProductsChart) {
+        topProductsChart.data.labels = topLabels;
+        topProductsChart.data.datasets[0].data = topData;
+        topProductsChart.update();
+    }
+    if (marginChart) {
+        const displayMargin = Math.max(0, Math.min(100, profitMargin));
+        marginChart.data.datasets[0].data = [displayMargin, 100 - displayMargin];
+        marginChart.options.plugins.title.text = `% Margen: ${profitMargin.toFixed(1)}%`;
+        marginChart.update();
     }
 }
 

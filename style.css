@@ -341,15 +341,25 @@ th {
 
 .charts-container {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
     gap: 30px;
 }
 
 .chart-wrapper {
-    height: 350px;
-    padding: 20px;
+    height: 380px;
+    padding: 25px;
     background: var(--card-hover);
     border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.chart-wrapper:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow);
 }
 
 @media (max-width: 768px) {
